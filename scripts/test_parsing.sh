@@ -193,6 +193,24 @@ test_parse_url_gitlab_ssh() {
         "GitLab SSH URL"
 }
 
+test_parse_url_gitlab_subgroup_https() {
+    assert_parse_url "https://gitlab.com/group/subgroup/repo" \
+        "gitlab.com" "group/subgroup" "repo" \
+        "GitLab subgroup HTTPS URL"
+}
+
+test_parse_url_gitlab_subgroup_ssh() {
+    assert_parse_url "git@gitlab.com:group/subgroup/repo.git" \
+        "gitlab.com" "group/subgroup" "repo" \
+        "GitLab subgroup SSH URL"
+}
+
+test_parse_url_custom_host_subgroup() {
+    assert_parse_url "git@source.golabs.io:go-fin-ds/cl-ab-score-models/gpp-behaviour-score-v1.git" \
+        "source.golabs.io" "go-fin-ds/cl-ab-score-models" "gpp-behaviour-score-v1" \
+        "Custom host subgroup SSH URL"
+}
+
 test_parse_url_bitbucket_https() {
     assert_parse_url "https://bitbucket.org/owner/repo" \
         "bitbucket.org" "owner" "repo" \
@@ -550,6 +568,12 @@ test_normalize_url_gitlab() {
         "GitLab SSH normalizes to GitLab HTTPS"
 }
 
+test_normalize_url_gitlab_subgroup() {
+    assert_normalize_url "git@source.golabs.io:go-fin-ds/cl-ab-score-models/gpp-behaviour-score-v1.git" \
+        "https://source.golabs.io/go-fin-ds/cl-ab-score-models/gpp-behaviour-score-v1" \
+        "GitLab subgroup SSH normalizes to HTTPS"
+}
+
 test_normalize_url_bitbucket() {
     assert_normalize_url "https://bitbucket.org/owner/repo" \
         "https://bitbucket.org/owner/repo" \
@@ -638,6 +662,13 @@ test_url_to_path_owner_repo_ssh() {
         "Owner-repo layout: SSH URL same name"
 }
 
+test_url_to_path_owner_repo_gitlab_subgroup() {
+    assert_url_to_path "https://gitlab.com/group/subgroup/repo" \
+        "/data/projects" "owner-repo" \
+        "/data/projects/group/subgroup/repo" \
+        "Owner-repo layout: GitLab subgroup URL"
+}
+
 #==============================================================================
 # Tests: url_to_local_path - Full Layout
 #==============================================================================
@@ -668,6 +699,13 @@ test_url_to_path_full_custom_host() {
         "/data/projects" "full" \
         "/data/projects/git.example.com/owner/repo" \
         "Full layout: custom git host"
+}
+
+test_url_to_path_full_gitlab_subgroup() {
+    assert_url_to_path "git@source.golabs.io:go-fin-ds/cl-ab-score-models/gpp-behaviour-score-v1.git" \
+        "/data/projects" "full" \
+        "/data/projects/source.golabs.io/go-fin-ds/cl-ab-score-models/gpp-behaviour-score-v1" \
+        "Full layout: custom host subgroup SSH URL"
 }
 
 #==============================================================================
@@ -705,10 +743,16 @@ test_clone_target_mixed_case() {
 }
 
 test_clone_target_gitlab() {
-    # Note: gh clone doesn't work with non-GitHub, but the function returns owner/repo
+    # Non-GitHub hosts use git clone directly; this remains a host-relative path helper.
     assert_clone_target "https://gitlab.com/owner/repo" \
         "owner/repo" \
         "Clone target from GitLab URL"
+}
+
+test_clone_target_gitlab_subgroup() {
+    assert_clone_target "git@source.golabs.io:go-fin-ds/cl-ab-score-models/gpp-behaviour-score-v1.git" \
+        "go-fin-ds/cl-ab-score-models/gpp-behaviour-score-v1" \
+        "Clone target from subgroup GitLab URL"
 }
 
 test_clone_target_same_name() {
@@ -740,6 +784,9 @@ run_test test_parse_url_host_prefix
 # parse_repo_url - Other Git Hosts
 run_test test_parse_url_gitlab_https
 run_test test_parse_url_gitlab_ssh
+run_test test_parse_url_gitlab_subgroup_https
+run_test test_parse_url_gitlab_subgroup_ssh
+run_test test_parse_url_custom_host_subgroup
 run_test test_parse_url_bitbucket_https
 run_test test_parse_url_custom_host
 
@@ -797,6 +844,7 @@ run_test test_normalize_url_ssh_without_suffix
 run_test test_normalize_url_shorthand
 run_test test_normalize_url_host_prefix
 run_test test_normalize_url_gitlab
+run_test test_normalize_url_gitlab_subgroup
 run_test test_normalize_url_bitbucket
 run_test test_normalize_url_trailing_slash
 
@@ -815,12 +863,14 @@ run_test test_url_to_path_flat_different_dir
 run_test test_url_to_path_owner_repo_https
 run_test test_url_to_path_owner_repo_shorthand
 run_test test_url_to_path_owner_repo_ssh
+run_test test_url_to_path_owner_repo_gitlab_subgroup
 
 # url_to_local_path - Full Layout
 run_test test_url_to_path_full_github
 run_test test_url_to_path_full_gitlab
 run_test test_url_to_path_full_shorthand
 run_test test_url_to_path_full_custom_host
+run_test test_url_to_path_full_gitlab_subgroup
 
 # url_to_clone_target
 run_test test_clone_target_https
@@ -829,6 +879,7 @@ run_test test_clone_target_ssh
 run_test test_clone_target_shorthand
 run_test test_clone_target_mixed_case
 run_test test_clone_target_gitlab
+run_test test_clone_target_gitlab_subgroup
 run_test test_clone_target_same_name
 
 # Print results

@@ -748,6 +748,12 @@ git@github.com:owner/repo.git
 
 # SSH with custom name
 git@github.com:owner/repo.git as myrepo
+
+# GitLab subgroup URL
+https://gitlab.example.com/group/subgroup/repo
+
+# GitLab subgroup SSH URL
+git@gitlab.example.com:group/subgroup/repo.git
 ```
 
 ### Advanced Repo Spec Syntax
@@ -783,6 +789,14 @@ https://github.com/owner/repo.git
 git@github.com:owner/repo.git
 github.com/owner/repo
 owner/repo
+```
+
+Non-GitHub hosts can also use full HTTPS/SSH URLs, including nested namespaces:
+
+```bash
+https://gitlab.example.com/group/subgroup/repo
+git@gitlab.example.com:group/subgroup/repo.git
+git.example.com/group/subgroup/repo
 ```
 
 ### Path Layout Examples
@@ -882,7 +896,7 @@ For each repository in your lists:
 1. **Parse URL** — Extract host, owner, repo name
 2. **Compute local path** — Based on layout configuration
 3. **Check existence** — Does the directory exist?
-4. **If missing** → Clone with `gh repo clone`
+4. **If missing** → Clone with `gh repo clone` for GitHub, or `git clone` for other Git hosts
 5. **If exists** → Verify remote URL matches, then check status
 6. **Get status** — Using git plumbing (ahead/behind/dirty)
 7. **Take action** — Pull if behind, skip if current, warn if diverged
@@ -3744,7 +3758,7 @@ All checks passed!
 |------------|---------|---------|
 | Bash | 4.0+ | Script runtime |
 | git | 2.0+ | Repository operations |
-| gh | 2.0+ | GitHub CLI for cloning |
+| gh | 2.0+ | GitHub CLI for GitHub-specific cloning/auth flows |
 | curl | any | Installation and updates |
 
 ### Optional

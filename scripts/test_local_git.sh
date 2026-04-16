@@ -646,6 +646,65 @@ test_do_clone_dry_run_writes_result() {
     cleanup_test_env
 }
 
+test_do_clone_non_github_uses_git() {
+    echo "Testing do_clone uses git clone for non-GitHub hosts..."
+    setup_test_env
+
+    local mock_bin="$TEMP_DIR/mock-bin"
+    local real_git
+    local original_path="$PATH"
+    local target_dir="$PROJECTS_DIR/non-github-clone"
+    mkdir -p "$mock_bin"
+    real_git=$(command -v git)
+
+    cat > "$mock_bin/git" <<EOF
+#!/usr/bin/env bash
+if [[ "\$1" == "clone" ]]; then
+    printf '%s\n' "\$@" > "$TEMP_DIR/git-clone.args"
+    dest="\${@: -1}"
+    mkdir -p "\$dest/.git"
+    exit 0
+fi
+exec "$real_git" "\$@"
+EOF
+    chmod +x "$mock_bin/git"
+
+    cat > "$mock_bin/gh" <<EOF
+#!/usr/bin/env bash
+touch "$TEMP_DIR/gh-called"
+exit 99
+EOF
+    chmod +x "$mock_bin/gh"
+
+    PATH="$mock_bin:$PATH"
+
+    if do_clone "git@source.golabs.io:go-fin-ds/cl-ab-score-models/gpp-behaviour-score-v1.git" \
+        "$target_dir" "source.golabs.io/go-fin-ds/cl-ab-score-models/gpp-behaviour-score-v1" 2>/dev/null; then
+        if [[ -d "$target_dir/.git" ]]; then
+            pass "do_clone created target directory via git clone for non-GitHub host"
+        else
+            fail "do_clone should create a target directory for non-GitHub clone"
+        fi
+
+        if [[ ! -e "$TEMP_DIR/gh-called" ]]; then
+            pass "do_clone skips gh for non-GitHub hosts"
+        else
+            fail "do_clone should not invoke gh for non-GitHub hosts"
+        fi
+
+        if [[ -f "$TEMP_DIR/git-clone.args" ]] && grep -q "git@source.golabs.io:go-fin-ds/cl-ab-score-models/gpp-behaviour-score-v1.git" "$TEMP_DIR/git-clone.args"; then
+            pass "do_clone passes the original URL to git clone"
+        else
+            fail "do_clone should pass the original URL to git clone"
+        fi
+    else
+        fail "do_clone should succeed for non-GitHub hosts via git clone"
+    fi
+
+    PATH="$original_path"
+    cleanup_test_env
+}
+
 #==============================================================================
 # Tests: get_remote_url
 #==============================================================================
@@ -1118,6 +1177,9 @@ test_do_clone_dry_run
 echo ""
 
 test_do_clone_dry_run_writes_result
+echo ""
+
+test_do_clone_non_github_uses_git
 echo ""
 
 # get_remote_url tests

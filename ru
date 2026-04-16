@@ -6178,9 +6178,15 @@ _is_path_under_base() {
     [[ "$path" == "$base" || "$path" == "$base/"* ]]
 }
 
-# Parse all GitHub URL formats and extract components
-# Supports: https://github.com/owner/repo, git@github.com:owner/repo.git,
-#           github.com/owner/repo, owner/repo (assumes github.com)
+# Parse repository URLs and extract host, namespace, and repo name.
+# Supports:
+#   https://github.com/owner/repo
+#   git@github.com:owner/repo.git
+#   https://gitlab.example.com/group/subgroup/repo
+#   git@gitlab.example.com:group/subgroup/repo.git
+#   github.com/owner/repo
+#   gitlab.example.com/group/subgroup/repo
+#   owner/repo (assumes github.com)
 # Args: url host_var owner_var repo_var (variable names)
 parse_repo_url() {
     local url="$1"
@@ -6199,26 +6205,27 @@ parse_repo_url() {
 
     local matched="false"
 
-    # SSH scp-like format: git@host:owner/repo (repo must not contain /)
-    if [[ "$url" =~ ^git@([^:]+):([^/]+)/([^/]+)$ ]]; then
+    # SSH scp-like format: git@host:namespace/repo
+    if [[ "$url" =~ ^git@([^:]+):(.+)/([^/]+)$ ]]; then
         _out_host="${BASH_REMATCH[1]}"
         _out_owner="${BASH_REMATCH[2]}"
         _out_repo="${BASH_REMATCH[3]}"
         matched="true"
-    # SSH URL format: ssh://git@host/owner/repo (optional user part)
-    elif [[ "$url" =~ ^ssh://([^@/]+@)?([^/]+)/([^/]+)/([^/]+)$ ]]; then
+    # SSH URL format: ssh://git@host/namespace/repo (optional user part)
+    elif [[ "$url" =~ ^ssh://([^@/]+@)?([^/]+)/(.+)/([^/]+)$ ]]; then
         _out_host="${BASH_REMATCH[2]}"
         _out_owner="${BASH_REMATCH[3]}"
         _out_repo="${BASH_REMATCH[4]}"
         matched="true"
-    # HTTPS format: https://host/owner/repo (optional user@ for auth)
-    elif [[ "$url" =~ ^https?://([^@/]+@)?([^/]+)/([^/]+)/([^/]+)$ ]]; then
+    # HTTPS format: https://host/namespace/repo (optional user@ for auth)
+    elif [[ "$url" =~ ^https?://([^@/]+@)?([^/]+)/(.+)/([^/]+)$ ]]; then
         _out_host="${BASH_REMATCH[2]}"
         _out_owner="${BASH_REMATCH[3]}"
         _out_repo="${BASH_REMATCH[4]}"
         matched="true"
-    # Host/owner/repo format (no protocol): github.com/owner/repo
-    elif [[ "$url" =~ ^([^/]+)/([^/]+)/([^/]+)$ ]]; then
+    # Host/namespace/repo format (no protocol): github.com/owner/repo,
+    # gitlab.example.com/group/subgroup/repo
+    elif [[ "$url" =~ ^([^/]+)/(.+)/([^/]+)$ ]]; then
         _out_host="${BASH_REMATCH[1]}"
         _out_owner="${BASH_REMATCH[2]}"
         _out_repo="${BASH_REMATCH[3]}"
@@ -6235,9 +6242,14 @@ parse_repo_url() {
     if [[ "$matched" == "true" ]]; then
         # Strip optional :port from host (avoid filesystem-unfriendly ':' in full layout)
         _out_host="${_out_host%%:*}"
-        if ! _is_safe_path_segment "$_out_owner" || ! _is_safe_path_segment "$_out_repo"; then
-            return 1
-        fi
+        local owner_part
+        local -a owner_parts=()
+        IFS='/' read -r -a owner_parts <<< "$_out_owner"
+        [[ ${#owner_parts[@]} -gt 0 ]] || return 1
+        for owner_part in "${owner_parts[@]}"; do
+            _is_safe_path_segment "$owner_part" || return 1
+        done
+        _is_safe_path_segment "$_out_repo" || return 1
         _set_out_var "$host_var" "$_out_host" || return 1
         _set_out_var "$owner_var" "$_out_owner" || return 1
         _set_out_var "$repo_var" "$_out_repo" || return 1
@@ -6294,7 +6306,7 @@ url_to_local_path() {
     esac
 }
 
-# Convert URL to clone target for gh repo clone (owner/repo format)
+# Convert URL to a host-relative clone target (namespace/repo format)
 url_to_clone_target() {
     local url="$1"
     local host owner repo
@@ -6815,7 +6827,7 @@ is_timeout_error() {
     [[ "$output" == *"transfer rate"* ]]
 }
 
-# Clone repository using gh
+# Clone repository using a host-appropriate strategy
 # Args: url target_dir repo_name [branch]
 do_clone() {
     local url="$1"
@@ -6831,11 +6843,11 @@ do_clone() {
         return 0
     fi
 
-    # Check for gh (required for cloning)
-    if ! command -v gh &>/dev/null; then
-        log_error "Cannot clone: gh is not installed"
-        write_result "$repo_name" "clone" "dep_error" "0" "gh not installed" "$target_dir"
-        return 3
+    local host owner repo
+    if ! parse_repo_url "$url" host owner repo; then
+        log_error "Cannot clone: invalid repo URL"
+        write_result "$repo_name" "clone" "invalid" "0" "invalid repo URL" "$target_dir"
+        return 1
     fi
 
     local clone_target
@@ -6851,7 +6863,21 @@ do_clone() {
     setup_git_timeout
 
     local output
-    if output=$(gh repo clone "$clone_target" "$target_dir" -- --quiet 2>&1); then
+    local clone_exit=0
+    if [[ "$host" == "github.com" ]]; then
+        if ! command -v gh &>/dev/null; then
+            log_error "Cannot clone GitHub repo: gh is not installed"
+            write_result "$repo_name" "clone" "dep_error" "0" "gh not installed" "$target_dir"
+            return 3
+        fi
+        output=$(gh repo clone "$clone_target" "$target_dir" -- --quiet 2>&1)
+        clone_exit=$?
+    else
+        output=$(git clone --quiet "$url" "$target_dir" 2>&1)
+        clone_exit=$?
+    fi
+
+    if [[ $clone_exit -eq 0 ]]; then
         local duration=$(($(date +%s) - start_time))
 
         # If a specific branch was requested, check it out
@@ -6873,7 +6899,7 @@ do_clone() {
         write_result "$repo_name" "clone" "ok" "$duration" "" "$target_dir"
         return 0
     else
-        local exit_code=$?
+        local exit_code=$clone_exit
         if is_timeout_error "$output"; then
             log_error "Timeout: $repo_name (network too slow)"
             write_result "$repo_name" "clone" "timeout" "0" "$output" "$target_dir"
